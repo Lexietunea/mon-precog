@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Precog — Prediction Market DEX</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#FFFFFF; --paper:rgba(255,255,255,.85); --panel-alt:#F6F6F7; --border:#E7E7EA;
+    --ink:#16111F; --ink-dim:#6E6580; --violet:#7C3AED; --violet2:#B794F6; --violet-soft:rgba(124,58,237,.10);
+    --yes:#12965A; --yes-soft:rgba(18,150,90,.10); --no:#D33A2C; --no-soft:rgba(211,58,44,.10);
+    --ease:cubic-bezier(.16,1,.3,1);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:#111114; --paper:rgba(24,24,28,.7); --panel-alt:#1B1B20; --border:#2A2A30;
+      --ink:#F1ECFB; --ink-dim:#9C90B5; --violet:#A78BFA; --violet2:#7C3AED; --violet-soft:rgba(167,139,250,.14);
+      --yes:#39D98A; --yes-soft:rgba(57,217,138,.12); --no:#FF6B5E; --no-soft:rgba(255,107,94,.12);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:#111114; --paper:rgba(24,24,28,.7); --panel-alt:#1B1B20; --border:#2A2A30;
+    --ink:#F1ECFB; --ink-dim:#9C90B5; --violet:#A78BFA; --violet2:#7C3AED; --violet-soft:rgba(167,139,250,.14);
+    --yes:#39D98A; --yes-soft:rgba(57,217,138,.12); --no:#FF6B5E; --no-soft:rgba(255,107,94,.12);
+  }
+  * { box-sizing:border-box; }
+  html { scroll-padding-top:env(safe-area-inset-top,0px); }
+  body {
+    margin:0; min-height:100%; background:var(--bg); color:var(--ink); font-family:'JetBrains Mono',monospace;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); overflow-x:hidden; position:relative;
+  }
+  .chain-field { position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.32;
+    background-image:linear-gradient(90deg, transparent 49px, var(--border) 50px, transparent 51px),
+      linear-gradient(transparent 49px, var(--border) 50px, transparent 51px);
+    background-size:50px 50px; mask-image:linear-gradient(to bottom, #000, transparent 72%);
+    animation:grid-drift 36s linear infinite; }
+  @keyframes grid-drift { to{ background-position:50px 50px; } }
+
+  header, .ticker-wrap, .wrap { position:relative; z-index:1; }
+  header {
+    position:sticky; top:0; top:env(safe-area-inset-top,0px); z-index:10;
+    background:var(--paper); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); border-bottom:1px solid var(--border);
+    display:flex; align-items:center; justify-content:space-between; padding:16px 20px; gap:10px; flex-wrap:wrap;
+  }
+  .brand { font-size:19px; font-weight:800; letter-spacing:-0.01em; font-family:'Manrope',sans-serif;
+    background:linear-gradient(100deg, var(--violet), var(--violet2), var(--violet)); background-size:200% auto;
+    -webkit-background-clip:text; background-clip:text; color:transparent; animation:shine 5s linear infinite; }
+  @keyframes shine { to{ background-position:200% center; } }
+  .header-right { display:flex; align-items:center; gap:10px; }
+  .chip { font-size:11px; padding:6px 11px; border-radius:20px; border:1px solid var(--border); color:var(--ink-dim); white-space:nowrap; transition:all .3s var(--ease); }
+  .chip.connected { color:var(--yes); border-color:var(--yes); background:var(--yes-soft); animation:pulseOnce .6s var(--ease); }
+  @keyframes pulseOnce { 0%{box-shadow:0 0 0 0 var(--yes-soft);} 100%{box-shadow:0 0 0 8px transparent;} }
+  #connect-btn { background:var(--violet); color:#fff; border:none; border-radius:8px; font-weight:700; font-size:12.5px; padding:10px 16px; cursor:pointer; font-family:inherit;
+    transition:transform .2s var(--ease), box-shadow .3s; box-shadow:0 4px 16px -6px var(--violet); }
+  #connect-btn:hover:not(:disabled) { transform:translateY(-1px); box-shadow:0 8px 20px -6px var(--violet); }
+  #connect-btn:disabled { opacity:.55; cursor:default; box-shadow:none; }
+
+  .ticker-wrap { border-bottom:1px solid var(--border); overflow:hidden; background:var(--panel-alt); }
+  .ticker { display:flex; gap:38px; white-space:nowrap; padding:8px 0; animation:scroll 32s linear infinite; width:max-content; }
+  .ticker-wrap:hover .ticker, .ticker-wrap:focus-within .ticker { animation-play-state:paused; }
+  .ticker span { font-size:11.5px; color:var(--ink-dim); }
+  .ticker b { color:var(--ink); }
+  .up { color:var(--yes); } .down { color:var(--no); }
+  @keyframes scroll { from{transform:translateX(0);} to{transform:translateX(-50%);} }
+
+  .wrap { max-width:1000px; margin:0 auto; padding:22px 20px 60px; }
+  .layout { display:grid; grid-template-columns:1.15fr 1fr; gap:20px; align-items:start; }
+  @media (max-width:760px){ .layout{ grid-template-columns:1fr; } }
+  .section-title { font-size:11px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.08em; margin:0 0 14px; }
+  .learn-guide { margin-top:28px; border-block:1px solid var(--border); }
+  .learn-guide summary { list-style:none; cursor:pointer; }
+  .learn-guide summary::-webkit-details-marker { display:none; }
+  .learn-toggle { min-height:72px; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 4px; }
+  .learn-toggle:focus-visible { outline:2px solid var(--violet); outline-offset:3px; }
+  .learn-heading { margin:0; font:700 16px/1.35 'Manrope',sans-serif; }
+  .learn-subheading { margin:4px 0 0; color:var(--ink-dim); font:12px/1.5 'Manrope',sans-serif; }
+  .learn-icon { width:32px; height:32px; flex:0 0 32px; display:grid; place-items:center; border:1px solid var(--border); border-radius:50%; color:var(--violet); font-size:20px; transition:transform .25s var(--ease); }
+  .learn-guide[open] .learn-icon { transform:rotate(45deg); }
+  .guide-content { padding:2px 0 22px; animation:guide-open .35s var(--ease) both; }
+  @keyframes guide-open { from{opacity:0; translate:0 8px;} to{opacity:1; translate:0 0;} }
+  .guide-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+  .guide-card { min-width:0; padding:16px; background:var(--panel-alt); border:1px solid var(--border); border-radius:8px; }
+  .guide-card h3 { margin:0 0 9px; font:700 14px/1.4 'Manrope',sans-serif; }
+  .guide-card p, .guide-card li { color:var(--ink-dim); font:12px/1.65 'Manrope',sans-serif; }
+  .guide-card p { margin:0 0 9px; }
+  .guide-card ul { margin:0; padding-left:17px; }
+  .guide-card li+li { margin-top:5px; }
+  .guide-resources { display:flex; flex-wrap:wrap; gap:16px; margin-top:14px; font:600 12px 'Manrope',sans-serif; }
+  .guide-resources a { color:var(--violet); text-underline-offset:3px; }
+  .guide-resources a:hover { color:var(--ink); }
+  .arcade { margin-top:32px; padding:20px 0; border-block:1px solid var(--border); }
+  .arcade-head { margin-bottom:16px; }
+  .arcade-title { margin:0; font:800 20px/1.3 'Manrope',sans-serif; }
+  .arcade-intro { margin:5px 0 0; color:var(--ink-dim); font:12px/1.55 'Manrope',sans-serif; }
+  .arcade-layout { display:grid; grid-template-columns:minmax(0,1fr) 210px; align-items:center; gap:18px; }
+  .arcade-stage { min-width:0; }
+  #game-canvas { display:block; width:100%; height:auto; aspect-ratio:560/260; border:1px solid var(--border); border-radius:8px; background:#11131c; touch-action:none; }
+  #game-canvas:focus-visible { outline:2px solid var(--violet); outline-offset:3px; }
+  .paddle-controls { display:flex; justify-content:center; gap:10px; margin-top:10px; }
+  .paddle-controls button { width:56px; height:42px; border:1px solid var(--border); border-radius:8px; background:var(--panel-alt); color:var(--ink); font:700 18px 'Manrope',sans-serif; cursor:pointer; touch-action:none; }
+  .paddle-controls button:hover { border-color:var(--violet); }
+  .paddle-controls button:active { background:var(--violet-soft); }
+  .arcade-side { display:flex; flex-direction:column; gap:12px; }
+  .arcade-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+  .arcade-stat { min-width:0; padding:9px 7px; background:var(--panel-alt); border:1px solid var(--border); border-radius:6px; text-align:center; }
+  .arcade-stat span { display:block; color:var(--ink-dim); font-size:9px; text-transform:uppercase; }
+  .arcade-stat strong { display:block; margin-top:4px; color:var(--ink); font-size:14px; }
+  #game-start { width:100%; padding:12px 10px; border:0; border-radius:8px; background:var(--violet); color:#fff; font:700 12px 'Manrope',sans-serif; cursor:pointer; transition:transform .2s var(--ease),opacity .2s; }
+  #game-start:hover:not(:disabled) { transform:translateY(-2px); }
+  #game-start:disabled { opacity:.55; cursor:wait; }
+  #game-status { min-height:3.2em; margin:0; color:var(--ink-dim); font:12px/1.55 'Manrope',sans-serif; }
+  .arcade-disclosure { margin:0; padding-top:10px; border-top:1px dashed var(--border); color:var(--ink-dim); font:10px/1.6 'Manrope',sans-serif; }
+  @media (max-width:760px){ .guide-grid{grid-template-columns:1fr;} }
+  @media (max-width:760px){ .arcade-layout{grid-template-columns:1fr;} .arcade-side{display:grid; grid-template-columns:1fr 1fr; align-items:center;} .arcade-stats,#game-status,.arcade-disclosure{grid-column:1/-1;} }
+
+  .market-card {
+    background:var(--paper); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    border:1px solid var(--border); border-radius:12px; padding:17px; margin-bottom:12px; cursor:pointer;
+    transition:border-color .25s var(--ease), transform .25s var(--ease), box-shadow .25s var(--ease);
+    opacity:0; translate:0 16px; filter:blur(5px); animation:card-enter .72s var(--ease) forwards;
+  }
+  .market-card:nth-child(1){animation-delay:.08s} .market-card:nth-child(2){animation-delay:.17s}
+  .market-card:nth-child(3){animation-delay:.26s} .market-card:nth-child(4){animation-delay:.35s}
+  @keyframes card-enter { to{ opacity:1; translate:0 0; filter:blur(0);} }
+  @keyframes panel-enter { from{ opacity:0; translate:0 12px; } to{ opacity:1; translate:0 0; } }
+  .market-card:hover { border-color:var(--violet); transform:translateY(-3px); box-shadow:0 14px 30px -16px var(--violet); }
+  .market-card.selected { border-color:var(--violet); box-shadow:0 0 0 1px var(--violet); }
+  .card-top { display:flex; justify-content:space-between; gap:14px; }
+  .market-q { font-family:'Manrope',sans-serif; font-size:15.5px; font-weight:700; line-height:1.4; margin:0 0 12px; flex:1; }
+  .spark path { fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;
+    stroke-dasharray:180; stroke-dashoffset:180; animation:spark-draw 1.1s var(--ease) .35s forwards; }
+  @keyframes spark-draw { to{ stroke-dashoffset:0; } }
+  .prob-bar { height:6px; border-radius:3px; overflow:hidden; display:flex; background:var(--panel-alt); margin-bottom:9px; }
+  .prob-bar .yf,.prob-bar .nf { transition:width .6s var(--ease); }
+  .prob-bar .yf { background:var(--yes); } .prob-bar .nf { background:var(--no); }
+  .market-meta { display:flex; justify-content:space-between; font-size:11px; color:var(--ink-dim); }
+  .market-meta .y { color:var(--yes); } .market-meta .n { color:var(--no); }
+
+  .trade-panel { background:var(--paper); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    border:1px solid var(--border); border-radius:12px; padding:20px; position:sticky; top:100px; animation:panel-enter .6s var(--ease) both; }
+  .trade-panel h3 { font-family:'Manrope',sans-serif; font-weight:700; font-size:16.5px; margin:0 0 5px; line-height:1.4; }
+  .res-date { font-size:11px; color:var(--ink-dim); margin:0 0 16px; }
+
+  .side-toggle { display:flex; gap:8px; margin-bottom:16px; }
+  .side-btn { flex:1; padding:11px; border-radius:8px; border:1px solid var(--border); background:var(--panel-alt); font-family:inherit; font-weight:600; font-size:12.5px; cursor:pointer; color:var(--ink-dim); transition:all .2s var(--ease); }
+  .side-btn.yes.active { border-color:var(--yes); background:var(--yes-soft); color:var(--yes); }
+  .side-btn.no.active { border-color:var(--no); background:var(--no-soft); color:var(--no); }
+
+  .amount-row label { font-size:10px; color:var(--ink-dim); display:block; margin-bottom:6px; letter-spacing:.04em; }
+  .amount-row input { width:100%; background:var(--panel-alt); border:1px solid var(--border); border-radius:8px; padding:12px; font-family:inherit; font-size:16px; color:var(--ink); margin-bottom:12px; transition:border-color .2s, box-shadow .2s; }
+  .amount-row input:focus { outline:none; border-color:var(--violet); box-shadow:0 0 0 3px var(--violet-soft); }
+
+  .curve-box { background:var(--panel-alt); border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-bottom:12px; }
+  .curve-box svg { width:100%; height:auto; display:block; }
+  .curve-label { font-size:10.5px; color:var(--ink-dim); display:flex; justify-content:space-between; margin-top:4px; }
+  .curve-label b { color:var(--violet); }
+  #dotEnd { transition:cx .5s var(--ease), cy .5s var(--ease); animation:point-beat 2.4s ease-in-out infinite; }
+  @keyframes point-beat { 50%{ r:6; opacity:.68; } }
+
+  .quote-row { display:flex; justify-content:space-between; font-size:12px; color:var(--ink-dim); padding:7px 0; border-top:1px solid var(--border); }
+  .quote-row:first-of-type { border-top:none; }
+  .quote-row .val { color:var(--ink); }
+
+  .trade-btn { width:100%; margin-top:15px; padding:14px; border-radius:8px; border:none; font-family:inherit; font-weight:700; font-size:13.5px; cursor:pointer; color:#fff;
+    transition:transform .15s var(--ease), background .3s; position:relative; overflow:hidden; }
+  .trade-btn.yes { background:var(--yes); } .trade-btn.no { background:var(--no); }
+  .trade-btn:active:not(:disabled) { transform:scale(.98); }
+  .trade-btn:disabled { opacity:.45; cursor:default; }
+  .trade-btn.success { background:var(--violet); }
+  .ripple { position:absolute; border-radius:50%; background:rgba(255,255,255,.5); transform:scale(0); animation:rip .6s var(--ease); pointer-events:none; }
+  @keyframes rip { to{ transform:scale(3); opacity:0; } }
+
+  .note { margin-top:16px; padding-top:14px; border-top:1px dashed var(--border); font-size:11px; color:var(--ink-dim); line-height:1.6; }
+  .toast { position:fixed; bottom:calc(22px + env(safe-area-inset-bottom,0px)); left:50%; transform:translateX(-50%) translateY(16px);
+    background:var(--paper); backdrop-filter:blur(10px); border:1px solid var(--violet); color:var(--ink); padding:11px 18px; border-radius:8px;
+    font-size:12.5px; opacity:0; transition:all .35s var(--ease); pointer-events:none; z-index:50; white-space:nowrap; }
+  .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+  @media (prefers-reduced-motion:reduce) {
+    *, *::before, *::after { scroll-behavior:auto !important; animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; }
+  }
+</style>
+</head>
+<body>
+<div class="chain-field" aria-hidden="true"></div>
+
+<header>
+  <div class="brand">Precog</div>
+  <div class="header-right">
+    <span class="chip" id="network-chip">Not connected</span>
+    <button id="connect-btn">Connect Wallet</button>
+  </div>
+</header>
+
+<div class="ticker-wrap"><div class="ticker" id="ticker"></div></div>
+
+<div class="wrap">
+  <div class="layout">
+    <div>
+      <p class="section-title">Live Markets</p>
+      <div id="market-list"></div>
+    </div>
+    <div id="trade-panel-wrap"></div>
+  </div>
+  <section class="arcade" aria-labelledby="arcade-title">
+    <div class="arcade-head">
+      <p class="section-title">While you wait</p>
+      <h2 class="arcade-title" id="arcade-title">Monad Bounce</h2>
+      <p class="arcade-intro">Keep the ball in play and clear the MON tiles. A new round needs a fresh on-chain start.</p>
+    </div>
+    <div class="arcade-layout">
+      <div class="arcade-stage">
+        <canvas id="game-canvas" width="560" height="260" tabindex="0" aria-label="Monad Bounce game. Use arrow keys or the controls below to move the paddle."></canvas>
+        <div class="paddle-controls" aria-label="Paddle controls">
+          <button type="button" id="move-left" aria-label="Move paddle left">←</button>
+          <button type="button" id="move-right" aria-label="Move paddle right">→</button>
+        </div>
+      </div>
+      <div class="arcade-side">
+        <div class="arcade-stats" aria-label="Game stats">
+          <div class="arcade-stat"><span>Score</span><strong id="game-score">0</strong></div>
+          <div class="arcade-stat"><span>Time</span><strong id="game-time">30</strong></div>
+          <div class="arcade-stat"><span>Lives</span><strong id="game-lives">3</strong></div>
+        </div>
+        <button type="button" id="game-start">Start round · sign transaction</button>
+        <p id="game-status" role="status" aria-live="polite">Move with the arrow keys or drag on the board. Catch the ball and clear the tiles.</p>
+        <p class="arcade-disclosure">Every start sends a 0 MON self-transaction on Monad Testnet and costs network gas. It records the start only; no game contract is deployed and play runs locally.</p>
+      </div>
+    </div>
+  </section>
+  <details class="learn-guide">
+    <summary class="learn-toggle">
+      <div>
+        <p class="learn-heading">New to prediction markets or Monad?</p>
+        <p class="learn-subheading">Open the quick guide to learn the basics and explore the chain.</p>
+      </div>
+      <span class="learn-icon" aria-hidden="true">+</span>
+    </summary>
+    <div class="guide-content">
+      <div class="guide-grid">
+        <article class="guide-card">
+          <h3>Prediction markets</h3>
+          <p>A market asks a question that will be resolved by a stated deadline. People trade shares tied to each possible outcome.</p>
+          <ul>
+            <li>YES and NO are opposite outcomes; check the exact resolution rules before trading.</li>
+            <li>A share price can suggest the crowd's implied odds, but it is not a guarantee or an objective probability.</li>
+            <li>Prices move as people trade. Thin liquidity can make prices jump, and you can lose what you put in.</li>
+          </ul>
+        </article>
+        <article class="guide-card">
+          <h3>Monad, in a nutshell</h3>
+          <p>Monad is an EVM-compatible layer-1 blockchain. Ethereum-style smart contracts and familiar developer tools can be used on it.</p>
+          <ul>
+            <li>MonadBFT is the consensus protocol validators use to agree on transaction order.</li>
+            <li>Parallel execution can process independent transactions at the same time while preserving correct results.</li>
+            <li>Its pipelined execution architecture and MonadDb are designed to support high-throughput applications.</li>
+          </ul>
+        </article>
+        <article class="guide-card">
+          <h3>Using the Monad network</h3>
+          <p>Wallets sign transactions; validators process them. On-chain transactions use gas, paid in Monad's native token, MON.</p>
+          <ul>
+            <li>This demo is configured for Monad Testnet (chain ID 10143). Testnet assets are for testing, not mainnet funds.</li>
+            <li>Wallet connection here does not make trades on-chain; market fills are local simulations.</li>
+            <li>Never share your recovery phrase or private key. Verify the network and website before signing anything.</li>
+          </ul>
+        </article>
+      </div>
+      <nav class="guide-resources" aria-label="Monad learning resources">
+        <a href="https://docs.monad.xyz/" target="_blank" rel="noopener noreferrer">Read the Monad documentation ↗</a>
+        <a href="https://testnet.monadvision.com/" target="_blank" rel="noopener noreferrer">Explore Monad Testnet ↗</a>
+      </nav>
+    </div>
+  </details>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function() {
+  const FEE_BPS = 30, BPS_DENOM = 10000;
+  const markets = [
+    { id:0, q:"Will Monad sustain 10,000 TPS on mainnet under real load by EOY?", resolves:"Dec 31, 2026", yesReserve:620, noReserve:380, volume:48200, seed:3 },
+    { id:1, q:"Will Monad mainnet host 100 live dApps by the end of Q1 2027?", resolves:"Mar 31, 2027", yesReserve:410, noReserve:590, volume:21100, seed:7 },
+    { id:2, q:"Will Monad-based DEXs exceed $1B in monthly volume this year?", resolves:"Dec 31, 2026", yesReserve:340, noReserve:260, volume:15400, seed:11 },
+    { id:3, q:"Will Monad's largest lending market pass $500M in deposits by Q1?", resolves:"Mar 31, 2027", yesReserve:705, noReserve:295, volume:33900, seed:19 }
+  ];
+  let selectedId = 0, side = 'yes';
+
+  function yesPct(m){ return Math.round((m.yesReserve/(m.yesReserve+m.noReserve))*100); }
+
+  function sparkPath(seed, pct) {
+    let v = seed, pts = [];
+    for (let i=0;i<11;i++){ v=(v*9301+49297)%233280; const n=v/233280; pts.push(30+n*20+(pct-50)*0.3*i/10); }
+    pts.push(30+(pct-50)*0.4+10);
+    const w=70,h=26,step=w/(pts.length-1);
+    return pts.map((p,i)=>(i===0?'M':'L')+(i*step).toFixed(1)+','+(h-(p/100*h)).toFixed(1)).join(' ');
+  }
+
+  function buyQuote(m, buySide, collateralIn) {
+    if (!collateralIn || collateralIn<=0) return {sharesOut:0, avgPrice:0, swapOut:0};
+    const half = collateralIn, yesR=m.yesReserve, noR=m.noReserve;
+    const withFee = half*(BPS_DENOM-FEE_BPS);
+    let sharesOut, swapOut;
+    if (buySide==='yes'){ swapOut=(withFee*yesR)/(noR*BPS_DENOM+withFee); sharesOut=half+swapOut; }
+    else { swapOut=(withFee*noR)/(yesR*BPS_DENOM+withFee); sharesOut=half+swapOut; }
+    return { sharesOut, avgPrice: collateralIn/sharesOut, swapOut };
+  }
+
+  function renderCurve(m, amt) {
+    const k = m.yesReserve*m.noReserve, w=200,h=84,pad=10;
+    const xMin=m.yesReserve*0.5, xMax=m.yesReserve*1.9;
+    let pts=[], yLo=Infinity, yHi=-Infinity;
+    for (let i=0;i<=32;i++){ const x=xMin+(xMax-xMin)*i/32; const y=k/x; pts.push([x,y]); if(y<yLo)yLo=y; if(y>yHi)yHi=y; }
+    const mx = x => pad+(x-xMin)/(xMax-xMin)*(w-2*pad);
+    const my = y => h-pad-(y-yLo)/(yHi-yLo)*(h-2*pad);
+    const d = pts.map((p,i)=>(i===0?'M':'L')+mx(p[0]).toFixed(1)+','+my(p[1]).toFixed(1)).join(' ');
+    const cx=mx(m.yesReserve), cy=my(m.noReserve);
+    let ex=cx, ey=cy, impactTxt = '—';
+    if (amt>0) {
+      const {swapOut} = buyQuote(m, side, amt);
+      let newYes, newNo;
+      if (side==='yes'){ newYes=m.yesReserve-swapOut; newNo=m.noReserve+amt; }
+      else { newYes=m.yesReserve+amt; newNo=m.noReserve-swapOut; }
+      ex = mx(Math.max(xMin,Math.min(xMax,newYes))); ey = my(k/Math.max(xMin,Math.min(xMax,newYes)));
+      const after = Math.round((newYes/(newYes+newNo))*100);
+      impactTxt = yesPct(m)+'% → '+after+'%';
+    }
+    return `<div class="curve-box"><svg viewBox="0 0 ${w} ${h}">
+      <path d="${d}" fill="none" stroke="var(--violet2)" stroke-width="1.5" opacity=".55"/>
+      <circle cx="${cx}" cy="${cy}" r="3" fill="var(--ink-dim)"/>
+      <circle id="dotEnd" cx="${ex}" cy="${ey}" r="4" fill="var(--violet)"/>
+      </svg><div class="curve-label"><span>Pool curve (x·y=k)</span><span>Odds shift: <b>${impactTxt}</b></span></div></div>`;
+  }
+
+  function renderTicker() {
+    const items = markets.map(m => { const yp=yesPct(m), dir=yp>=50?'up':'down';
+      return `<span>${m.q.split(' ').slice(0,3).join(' ').toUpperCase()} <b>${yp}¢</b> <span class="${dir}">${dir==='up'?'▲':'▼'}</span></span>`; }).join('');
+    document.getElementById('ticker').innerHTML = items+items;
+  }
+
+  function renderMarketList() {
+    const list = document.getElementById('market-list'); list.innerHTML='';
+    markets.forEach(m => {
+      const yp = yesPct(m);
+      const card = document.createElement('div');
+      card.className = 'market-card'+(m.id===selectedId?' selected':'');
+      card.innerHTML = `<div class="card-top"><p class="market-q">${m.q}</p>
+        <svg class="spark" width="70" height="26" viewBox="0 0 70 26"><path d="${sparkPath(m.seed,yp)}" stroke="${yp>=50?'var(--yes)':'var(--no)'}"/></svg></div>
+        <div class="prob-bar"><div class="yf" style="width:${yp}%"></div><div class="nf" style="width:${100-yp}%"></div></div>
+        <div class="market-meta"><span><span class="y">YES ${yp}%</span> &nbsp; <span class="n">NO ${100-yp}%</span></span><span>Resolves ${m.resolves}</span></div>`;
+      card.addEventListener('click', () => { selectedId=m.id; renderTradePanel();
+        document.querySelectorAll('.market-card').forEach(c=>c.classList.remove('selected')); card.classList.add('selected'); });
+      list.appendChild(card);
+    });
+  }
+
+  function renderTradePanel() {
+    const m = markets.find(x=>x.id===selectedId), yp = yesPct(m);
+    document.getElementById('trade-panel-wrap').innerHTML = `
+      <div class="trade-panel">
+        <h3>${m.q}</h3>
+        <p class="res-date">Resolves ${m.resolves} &middot; Vol $${m.volume.toLocaleString()}</p>
+        <div class="side-toggle">
+          <button class="side-btn yes ${side==='yes'?'active':''}" id="btn-yes">Buy YES · ${yp}¢</button>
+          <button class="side-btn no ${side==='no'?'active':''}" id="btn-no">Buy NO · ${100-yp}¢</button>
+        </div>
+        <div class="amount-row"><label>AMOUNT (mUSD)</label><input type="number" id="amount-input" placeholder="0.00" min="0" step="0.01"></div>
+        <div id="curve-wrap">${renderCurve(m,0)}</div>
+        <div><div class="quote-row"><span>Shares out</span><span class="val" id="q-shares">—</span></div>
+        <div class="quote-row"><span>Avg price</span><span class="val" id="q-price">—</span></div>
+        <div class="quote-row"><span>Fee (0.3%)</span><span class="val" id="q-fee">—</span></div></div>
+        <button class="trade-btn ${side}" id="trade-btn" disabled>Enter an amount</button>
+        <div class="note">Quotes use constant-product AMM math to model Monad market depth. Fills are simulated locally and do not submit on-chain transactions.</div>
+      </div>`;
+    document.getElementById('btn-yes').onclick = () => { side='yes'; renderTradePanel(); };
+    document.getElementById('btn-no').onclick = () => { side='no'; renderTradePanel(); };
+    document.getElementById('amount-input').oninput = updateQuote;
+    document.getElementById('trade-btn').onclick = executeTrade;
+  }
+
+  function animateNum(el, to, decimals, prefix, suffix) {
+    const from = parseFloat(el.dataset.val)||0, start=performance.now(), dur=400;
+    function tick(now){ const t=Math.min(1,(now-start)/dur), e=1-Math.pow(1-t,3), v=from+(to-from)*e;
+      el.textContent = prefix+v.toFixed(decimals)+suffix; if(t<1) requestAnimationFrame(tick); else el.dataset.val=to; }
+    requestAnimationFrame(tick);
+  }
+
+  function updateQuote() {
+    const m = markets.find(x=>x.id===selectedId);
+    const amt = parseFloat(document.getElementById('amount-input').value);
+    const btn = document.getElementById('trade-btn');
+    document.getElementById('curve-wrap').innerHTML = renderCurve(m, amt||0);
+    if (!amt || amt<=0) {
+      ['q-shares','q-price','q-fee'].forEach(id=>{document.getElementById(id).textContent='—'; document.getElementById(id).dataset.val=0;});
+      btn.disabled = true; btn.textContent = 'Enter an amount'; return;
+    }
+    const {sharesOut, avgPrice} = buyQuote(m, side, amt);
+    animateNum(document.getElementById('q-shares'), sharesOut, 4, '', ' '+side.toUpperCase());
+    animateNum(document.getElementById('q-price'), avgPrice, 4, '$', '');
+    animateNum(document.getElementById('q-fee'), amt*FEE_BPS/BPS_DENOM, 4, '$', '');
+    btn.disabled = false; btn.textContent = 'Buy '+side.toUpperCase();
+  }
+
+  function executeTrade(e) {
+    const m = markets.find(x=>x.id===selectedId);
+    const amt = parseFloat(document.getElementById('amount-input').value);
+    const {sharesOut} = buyQuote(m, side, amt);
+    if (side==='yes'){ m.noReserve+=amt; m.yesReserve-=(sharesOut-amt); }
+    else { m.yesReserve+=amt; m.noReserve-=(sharesOut-amt); }
+    m.volume += amt;
+    const btn = e.currentTarget;
+    const r = document.createElement('span'); r.className='ripple';
+    r.style.left=(e.offsetX-10)+'px'; r.style.top=(e.offsetY-10)+'px'; r.style.width=r.style.height='20px';
+    btn.appendChild(r); setTimeout(()=>r.remove(),600);
+    btn.classList.add('success'); btn.textContent = '✓ Filled '+sharesOut.toFixed(2)+' shares';
+    showToast('Simulated fill: '+sharesOut.toFixed(2)+' '+side.toUpperCase()+' @ avg $'+(amt/sharesOut).toFixed(4));
+    setTimeout(() => { document.getElementById('amount-input').value=''; renderMarketList(); renderTicker(); renderTradePanel(); }, 900);
+  }
+
+  function showToast(msg) { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2400); }
+
+  const GAME_START_DATA = '0x505245434f472d424f554e43452d5354415254';
+  const gameCanvas = document.getElementById('game-canvas');
+  const gameContext = gameCanvas.getContext('2d');
+  const game = { status:'ready', score:0, lives:3, remaining:30, startedAt:0, lastFrame:0, paddleX:280, ball:{x:280,y:190,vx:145,vy:-205,r:6}, targets:[], keys:{left:false,right:false}, trail:[] };
+  const PADDLE_WIDTH = 84, PADDLE_Y = 232, PADDLE_HEIGHT = 9;
+
+  function resetTargets() {
+    const columns=8, targetWidth=52, targetHeight=12, gap=12, startX=(gameCanvas.width-(columns*targetWidth+(columns-1)*gap))/2;
+    game.targets=Array.from({length:16},(_,i)=>({x:startX+(i%columns)*(targetWidth+gap),y:30+Math.floor(i/columns)*22,w:targetWidth,h:targetHeight,alive:true,color:i%3===0?'#d8ff5e':i%2===0?'#a68aff':'#ff75c8'}));
+  }
+
+  function drawGame() {
+    const ctx=gameContext, width=gameCanvas.width, height=gameCanvas.height;
+    ctx.clearRect(0,0,width,height);
+    const backdrop=ctx.createLinearGradient(0,0,width,height);
+    backdrop.addColorStop(0,'#171a27'); backdrop.addColorStop(1,'#10121a');
+    ctx.fillStyle=backdrop; ctx.fillRect(0,0,width,height);
+    ctx.strokeStyle='rgba(205,210,255,.055)'; ctx.lineWidth=1;
+    for(let x=20;x<width;x+=28){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,height);ctx.stroke();}
+    for(let y=16;y<height;y+=28){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(width,y);ctx.stroke();}
+    game.targets.forEach(tile=>{
+      if(!tile.alive)return;
+      ctx.shadowColor=tile.color; ctx.shadowBlur=9; ctx.fillStyle=tile.color;
+      ctx.beginPath(); ctx.roundRect(tile.x,tile.y,tile.w,tile.h,4); ctx.fill(); ctx.shadowBlur=0;
+      ctx.fillStyle='rgba(16,18,26,.58)'; ctx.font='600 8px JetBrains Mono, monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('MON',tile.x+tile.w/2,tile.y+tile.h/2+.5);
+    });
+    game.trail.forEach((point,i)=>{ctx.globalAlpha=(i+1)/game.trail.length*.22;ctx.fillStyle='#a68aff';ctx.beginPath();ctx.arc(point.x,point.y,game.ball.r*(i+1)/game.trail.length,0,Math.PI*2);ctx.fill();});
+    ctx.globalAlpha=1;
+    ctx.shadowColor='#d8ff5e'; ctx.shadowBlur=18; ctx.fillStyle='#f2ffad'; ctx.beginPath(); ctx.arc(game.ball.x,game.ball.y,game.ball.r,0,Math.PI*2); ctx.fill(); ctx.shadowBlur=0;
+    ctx.shadowColor='#a68aff'; ctx.shadowBlur=14; ctx.fillStyle='#a68aff'; ctx.fillRect(game.paddleX-PADDLE_WIDTH/2,PADDLE_Y,PADDLE_WIDTH,PADDLE_HEIGHT); ctx.shadowBlur=0;
+    if(game.status==='ready'){
+      ctx.fillStyle='rgba(8,10,16,.62)'; ctx.fillRect(0,0,width,height);
+      ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillStyle='#f4f1ff'; ctx.font='700 18px Manrope, sans-serif'; ctx.fillText('MONAD BOUNCE',width/2,height/2-8);
+      ctx.fillStyle='#b9b4cb'; ctx.font='12px Manrope, sans-serif'; ctx.fillText('Sign a testnet transaction to start a round',width/2,height/2+16);
+    }
+  }
+
+  function updateGameStats() {
+    document.getElementById('game-score').textContent=game.score;
+    document.getElementById('game-time').textContent=Math.ceil(game.remaining);
+    document.getElementById('game-lives').textContent=game.lives;
+  }
+
+  function finishGame(message) {
+    game.status='ready'; game.keys.left=false; game.keys.right=false;
+    document.getElementById('game-status').textContent=message;
+    const button=document.getElementById('game-start'); button.disabled=false; button.textContent='Start another round · sign transaction';
+    drawGame();
+  }
+
+  function gameFrame(now) {
+    if(game.status!=='playing')return;
+    const dt=Math.min((now-game.lastFrame)/1000,.035); game.lastFrame=now;
+    game.remaining=Math.max(0,30-(now-game.startedAt)/1000);
+    if(game.remaining<=0){updateGameStats();finishGame('Time. Final score: '+game.score+'. Start another round with a new transaction.');return;}
+    if(game.keys.left)game.paddleX-=330*dt;
+    if(game.keys.right)game.paddleX+=330*dt;
+    game.paddleX=Math.max(PADDLE_WIDTH/2,Math.min(gameCanvas.width-PADDLE_WIDTH/2,game.paddleX));
+    const ball=game.ball, width=gameCanvas.width, height=gameCanvas.height;
+    ball.x+=ball.vx*dt; ball.y+=ball.vy*dt;
+    if(ball.x<ball.r){ball.x=ball.r;ball.vx=Math.abs(ball.vx);}
+    if(ball.x>width-ball.r){ball.x=width-ball.r;ball.vx=-Math.abs(ball.vx);}
+    if(ball.y<ball.r){ball.y=ball.r;ball.vy=Math.abs(ball.vy);}
+    if(ball.vy>0&&ball.y+ball.r>=PADDLE_Y&&ball.y-ball.r<=PADDLE_Y+PADDLE_HEIGHT&&Math.abs(ball.x-game.paddleX)<=PADDLE_WIDTH/2+ball.r){
+      const impact=(ball.x-game.paddleX)/(PADDLE_WIDTH/2);
+      ball.y=PADDLE_Y-ball.r; ball.vx=impact*250; ball.vy=-Math.max(190,Math.abs(ball.vy)*1.015); game.score++;
+    }
+    for(const tile of game.targets){
+      if(tile.alive&&ball.x+ball.r>tile.x&&ball.x-ball.r<tile.x+tile.w&&ball.y+ball.r>tile.y&&ball.y-ball.r<tile.y+tile.h){
+        tile.alive=false; ball.vy=-ball.vy; game.score+=10; break;
+      }
+    }
+    if(game.targets.every(tile=>!tile.alive)){resetTargets();ball.vx*=1.08;ball.vy*=1.08;}
+    if(ball.y-ball.r>height){
+      game.lives--;
+      if(game.lives<=0){updateGameStats();finishGame('Game over. Final score: '+game.score+'. Start another round with a new transaction.');return;}
+      ball.x=width/2;ball.y=PADDLE_Y-22;ball.vx=(Math.random()-.5)*180;ball.vy=-210;game.trail=[];
+    }
+    game.trail.push({x:ball.x,y:ball.y});if(game.trail.length>7)game.trail.shift();
+    updateGameStats();drawGame();requestAnimationFrame(gameFrame);
+  }
+
+  async function startGameRound() {
+    const button=document.getElementById('game-start');
+    if(game.status!=='ready')return;
+    game.status='requesting';button.disabled=true;button.textContent='Confirm in your wallet…';
+    document.getElementById('game-status').textContent='Connecting to Monad Testnet and requesting the round-start transaction…';
+    try {
+      const wallet=await connectWallet();
+      if(!wallet){game.status='ready';document.getElementById('game-status').textContent='Connect a wallet on Monad Testnet to start a round.';return;}
+      const txHash=await window.ethereum.request({method:'eth_sendTransaction',params:[{from:wallet,to:wallet,value:'0x0',data:GAME_START_DATA}]});
+      game.status='playing';game.score=0;game.lives=3;game.remaining=30;game.startedAt=performance.now();game.lastFrame=game.startedAt;game.paddleX=gameCanvas.width/2;game.ball={x:gameCanvas.width/2,y:190,vx:(Math.random()>.5?145:-145),vy:-205,r:6};game.trail=[];resetTargets();updateGameStats();
+      button.textContent='Round in progress';
+      document.getElementById('game-status').textContent='Round transaction submitted · '+txHash.slice(0,10)+'…';
+      gameCanvas.focus();drawGame();requestAnimationFrame(gameFrame);
+    } catch(error) {
+      game.status='ready';
+      document.getElementById('game-status').textContent=error.code===4001?'Transaction declined. No round was started.':'Could not start the round. Check your Monad Testnet balance and try again.';
+      showToast(error.code===4001?'Round start declined':'Round start transaction failed');
+    } finally {
+      if(game.status==='ready'){button.disabled=false;button.textContent='Start round · sign transaction';drawGame();}
+    }
+  }
+
+  function movePaddleTo(event) {
+    if(game.status!=='playing')return;
+    const bounds=gameCanvas.getBoundingClientRect();
+    game.paddleX=(event.clientX-bounds.left)/bounds.width*gameCanvas.width;
+    game.paddleX=Math.max(PADDLE_WIDTH/2,Math.min(gameCanvas.width-PADDLE_WIDTH/2,game.paddleX));
+  }
+
+  document.getElementById('game-start').addEventListener('click',startGameRound);
+  gameCanvas.addEventListener('pointerdown',movePaddleTo);
+  gameCanvas.addEventListener('pointermove',event=>{if(event.buttons)movePaddleTo(event);});
+  window.addEventListener('keydown',event=>{
+    if(game.status!=='playing')return;
+    if(event.key==='ArrowLeft'||event.key.toLowerCase()==='a'){game.keys.left=true;event.preventDefault();}
+    if(event.key==='ArrowRight'||event.key.toLowerCase()==='d'){game.keys.right=true;event.preventDefault();}
+  });
+  window.addEventListener('keyup',event=>{
+    if(event.key==='ArrowLeft'||event.key.toLowerCase()==='a')game.keys.left=false;
+    if(event.key==='ArrowRight'||event.key.toLowerCase()==='d')game.keys.right=false;
+  });
+  gameCanvas.addEventListener('blur',()=>{game.keys.left=false;game.keys.right=false;});
+  [['move-left','left'],['move-right','right']].forEach(([id,direction])=>{
+    const control=document.getElementById(id), release=()=>{game.keys[direction]=false;};
+    control.addEventListener('pointerdown',event=>{event.preventDefault();game.keys[direction]=true;control.setPointerCapture(event.pointerId);});
+    control.addEventListener('pointerup',release);control.addEventListener('pointercancel',release);control.addEventListener('lostpointercapture',release);
+  });
+  drawGame();
+
+  const MONAD_TESTNET = { chainId:'0x279f', chainName:'Monad Testnet', nativeCurrency:{name:'MON',symbol:'MON',decimals:18}, rpcUrls:['https://testnet-rpc.monad.xyz'], blockExplorerUrls:['https://testnet.monadvision.com'] };
+
+  async function connectWallet() {
+    if (!window.ethereum) { showToast('No wallet found — install MetaMask'); return; }
+    try {
+      const accounts = await window.ethereum.request({ method:'eth_requestAccounts' });
+      const wallet = accounts[0];
+      let chainId = await window.ethereum.request({ method:'eth_chainId' });
+      if (chainId !== MONAD_TESTNET.chainId) {
+        try { await window.ethereum.request({ method:'wallet_switchEthereumChain', params:[{chainId:MONAD_TESTNET.chainId}] }); }
+        catch(e){ if (e.code===4902) await window.ethereum.request({ method:'wallet_addEthereumChain', params:[MONAD_TESTNET] }); }
+        chainId = await window.ethereum.request({ method:'eth_chainId' });
+      }
+      const onMonad = chainId === MONAD_TESTNET.chainId;
+      const chip = document.getElementById('network-chip');
+      chip.textContent = (onMonad?'Monad Testnet · ':'Wrong network · ')+wallet.slice(0,6)+'…'+wallet.slice(-4);
+      chip.classList.toggle('connected', onMonad);
+      const btn = document.getElementById('connect-btn'); btn.textContent=onMonad?'Connected':'Switch to Monad'; btn.disabled=onMonad;
+      return onMonad ? wallet : null;
+    } catch(e) { showToast('Connection cancelled or failed'); return null; }
+  }
+  document.getElementById('connect-btn').addEventListener('click', connectWallet);
+
+  renderTicker(); renderMarketList(); renderTradePanel();
+})();
+</script>
+</body>
+</html>
